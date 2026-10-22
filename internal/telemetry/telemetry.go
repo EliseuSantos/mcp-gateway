@@ -26,7 +26,8 @@ import (
 const tracerName = "github.com/EliseuSantos/mcp-gateway/internal/telemetry"
 
 // Config selects the OTLP HTTP exporter. Endpoint is a base URL such as
-// "http://jaeger:4318", or host:port, which is treated as http.
+// "http://jaeger:4318", or host:port, which is treated as http. A URL with
+// no path is sent to /v1/traces. A URL that already has a path is used as given.
 type Config struct {
 	ServiceName string
 	Endpoint    string
@@ -73,6 +74,13 @@ func normalizeEndpoint(raw string) (string, error) {
 	parsed, err := url.Parse(raw)
 	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
 		return "", fmt.Errorf("telemetry: endpoint %q is not an http(s) URL", raw)
+	}
+	// otlptracehttp.WithEndpointURL uses the path as given and does not append
+	// /v1/traces. OTEL_EXPORTER_OTLP_ENDPOINT is a base URL, so an empty path
+	// means the traces signal path.
+	if strings.Trim(parsed.Path, "/") == "" {
+		parsed.Path = "/v1/traces"
+		parsed.RawPath = ""
 	}
 	return parsed.String(), nil
 }

@@ -151,6 +151,36 @@ func TestTraceparentReachesUpstream(t *testing.T) {
 	}
 }
 
+func TestNormalizeEndpoint(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{in: "jaeger:4318", want: "http://jaeger:4318/v1/traces"},
+		{in: "http://jaeger:4318", want: "http://jaeger:4318/v1/traces"},
+		{in: "http://jaeger:4318/", want: "http://jaeger:4318/v1/traces"},
+		{in: "https://collector.example/v1/traces", want: "https://collector.example/v1/traces"},
+		{in: "http://collector.example/custom", want: "http://collector.example/custom"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.in, func(t *testing.T) {
+			t.Parallel()
+			got, err := normalizeEndpoint(tc.in)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != tc.want {
+				t.Fatalf("normalizeEndpoint(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+	if _, err := normalizeEndpoint("ftp://collector"); err == nil {
+		t.Fatal("ftp endpoint error = nil")
+	}
+}
+
 func validTraceparent(value string) bool {
 	parts := strings.Split(value, "-")
 	if len(parts) != 4 || parts[0] != "00" || len(parts[1]) != 32 || len(parts[2]) != 16 {
