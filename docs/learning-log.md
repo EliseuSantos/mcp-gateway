@@ -36,6 +36,6 @@ Tracing is off when no OTLP endpoint is set, so `make run` does not need Jaeger.
 
 ## Phase 4 — release
 
-The demo is a compose file and a script, not a hosted URL. The VHS tape runs that script so the recording and the quickstart are the same commands. The Dockerfile used by Compose stayed the one under `cmd/mcp-gateway`. Goreleaser builds the release binaries and does not push an image.
+The demo is a compose file and a script, not a hosted URL. Host ports default to 8080, 8081, and 16686, and move with `GATEWAY_PORT`, `ECHO_PORT`, and `JAEGER_UI_PORT` when the machine already has those ports. The VHS tapes run that script so the recording and the quickstart are the same commands. The Dockerfile used by Compose stayed the one under `cmd/mcp-gateway`. Goreleaser builds the release binaries and does not push an image.
 
 What I would revisit after v0.1.0: idle session expiry, an allowlist for resources and prompts, and a real secret store in place of the development keys. I would not revisit the session boundary or the decision to fail closed on a `tools/list` the gateway cannot filter.

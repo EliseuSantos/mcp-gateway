@@ -1,12 +1,15 @@
 name: mcp-gateway
 
+# Host ports. Defaults are the quickstart ports. Override any of them when
+# that port is already taken; the process inside the container does not move.
+#   GATEWAY_PORT=18080 docker compose up
 services:
   echo-server:
     build:
       context: .
       dockerfile: examples/echo-server/Dockerfile
     ports:
-      - "8081:8081"
+      - "${ECHO_PORT:-8081}:8081"
     environment:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
       OTEL_SERVICE_NAME: echo-server
@@ -16,9 +19,9 @@ services:
   jaeger:
     image: jaegertracing/jaeger:2.22.0
     ports:
-      - "16686:16686" # UI
-      - "4317:4317" # OTLP gRPC
-      - "4318:4318" # OTLP HTTP
+      - "${JAEGER_UI_PORT:-16686}:16686"
+      - "${JAEGER_OTLP_GRPC_PORT:-4317}:4317"
+      - "${JAEGER_OTLP_HTTP_PORT:-4318}:4318"
 
   gateway:
     build:
@@ -32,7 +35,7 @@ services:
       - -config
       - /etc/mcp-gateway/gateway.yaml
     ports:
-      - "8080:8080"
+      - "${GATEWAY_PORT:-8080}:8080"
     volumes:
       - ./examples/config/gateway.yaml:/etc/mcp-gateway/gateway.yaml:ro
     environment:

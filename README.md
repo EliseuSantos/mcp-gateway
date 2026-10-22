@@ -9,7 +9,11 @@ Open-source MCP (Model Context Protocol) gateway. It sits between MCP clients an
 
 The gateway terminates the client session and opens its own session upstream. [ADR-001](docs/adr/0001-runtime-e-transporte.md) records the transport. [ADR-002](docs/adr/0002-modelo-de-policy.md) records the allowlist. [ADR-003](docs/adr/0003-audit-e-redacao.md) records what the audit line keeps. [docs/learning-log.md](docs/learning-log.md) is the short version of the trade-offs.
 
-The project is shown with a recorded local run. Nothing is hosted. The tape is in [docs/demo](docs/demo).
+The project is shown with a recorded local run. Nothing is hosted.
+
+![Demo: the allowlist drops delete_everything, then the call is denied](docs/demo/demo.gif)
+
+16:9 recording: [docs/demo/demo.mp4](docs/demo/demo.mp4). Square cut for LinkedIn: [docs/demo/demo-square.mp4](docs/demo/demo-square.mp4). The tapes and the script are in [docs/demo](docs/demo).
 
 ## Architecture
 
@@ -32,7 +36,7 @@ Auth and the allowlist run inside the gateway, before a denied `tools/call` is f
 
 ## Quickstart
 
-About five minutes, with Docker and curl installed. The commands assume the repository root and free host ports 8080, 8081, and 16686.
+About five minutes, with Docker and curl installed. The commands assume the repository root. Host ports default to 8080 (gateway), 8081 (echo-server), and 16686 (Jaeger UI). Set `GATEWAY_PORT`, `ECHO_PORT`, or `JAEGER_UI_PORT` when one of those is already taken. OTLP host ports follow `JAEGER_OTLP_GRPC_PORT` (4317) and `JAEGER_OTLP_HTTP_PORT` (4318). The process inside each container keeps its own port.
 
 ```bash
 docker compose up --build

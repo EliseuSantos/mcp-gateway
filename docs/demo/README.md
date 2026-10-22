@@ -2,22 +2,32 @@
 
 The recording is a local `docker compose up`. Nothing in this repo is hosted.
 
-From the repository root, with ports 8080, 8081, and 16686 free:
+| File | What it is |
+| --- | --- |
+| [demo.mp4](demo.mp4) | 16:9, for the README and the site |
+| [demo-square.mp4](demo-square.mp4) | 1080×1080, larger type, for LinkedIn |
+| [demo.gif](demo.gif) | short GIF of the same run, embedded at the top of the README |
+
+Host ports default to 8080 (gateway), 8081 (echo-server), and 16686 (Jaeger UI). The published recording sets `GATEWAY_PORT=18080` so it does not bind 8080. Override `ECHO_PORT`, `JAEGER_UI_PORT`, `JAEGER_OTLP_GRPC_PORT`, or `JAEGER_OTLP_HTTP_PORT` the same way when those ports are taken. Container ports stay 8080, 8081, 4317, and 4318.
+
+From the repository root:
 
 ```bash
 docker compose build
 vhs docs/demo/demo.tape
+vhs docs/demo/demo-square.tape
 ```
 
-The tape runs `docker compose up --build -d` and then [`show.sh`](show.sh). The script waits until the gateway answers `/healthz`, then it:
+Each tape exports `GATEWAY_PORT=18080` and `DEMO_PACE_SECONDS=7`, starts the stack, and runs [`show.sh`](show.sh). The script:
 
-1. initializes a session with `Authorization: Bearer dev-demo-key`
-2. lists tools and shows `echo` and `time` (`delete_everything` is filtered out)
-3. calls `delete_everything` and prints the JSON-RPC error
-4. prints the audit line (`"decision":"deny"`, `"upstream_status":0`)
-5. prints the Jaeger search URL for the trace: <http://127.0.0.1:16686/search?service=mcp-gateway>
+1. waits until the gateway answers `/healthz`
+2. initializes a session with `Authorization: Bearer dev-demo-key`
+3. lists tools and shows `echo` and `time` (`delete_everything` is filtered out)
+4. calls `delete_everything` and prints the JSON-RPC error
+5. prints the audit line (`"decision":"deny"`, `"upstream_status":0`)
+6. prints the Jaeger search URL: <http://127.0.0.1:16686/search?service=mcp-gateway>
 
-`show.sh` can also be run on its own after `docker compose up --build -d`.
+`show.sh` can also be run on its own after `docker compose up -d`. Leave `DEMO_PACE_SECONDS` unset for that.
 
 ## Rendering
 
@@ -28,14 +38,12 @@ go install github.com/charmbracelet/vhs@latest
 vhs docs/demo/demo.tape
 ```
 
-The mp4 is `docs/demo/demo.mp4`. VHS treats a leading `/` as a regex, so the `Output` path in the tape is relative. If the mp4 is small and a GIF is useful:
+VHS treats a leading `/` as a regex, so each `Output` path is relative. Build the images once before recording so the tape spends its time on the calls, not on the compiler.
+
+The committed GIF is the full 16:9 recording at 1280×720, about 2 MB:
 
 ```bash
-ffmpeg -y -i docs/demo/demo.mp4 docs/demo/demo.gif
+ffmpeg -y -i docs/demo/demo.mp4 \
+  -vf "fps=10,scale=1280:-1:flags=lanczos,split[s0][s1];[s0]palettegen=stats_mode=diff:max_colors=128[p];[s1][p]paletteuse=dither=bayer:bayer_scale=2" \
+  -loop 0 docs/demo/demo.gif
 ```
-
-Build the images once before recording so the tape spends its time on the calls, not on the compiler. The tape sleeps 35 seconds, which covers a warm `up -d` plus the script. A cold image build needs a longer `Sleep` in the tape.
-
-## Why this checkout has no mp4
-
-VHS records on this machine once `ttyd` is installed. The demo tape was not rendered here because `docker compose up` publishes host port 8080, and that port was already taken by another container. The tape and `show.sh` are the source of the recording.
