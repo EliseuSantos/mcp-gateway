@@ -1,0 +1,6 @@
+.git
+bin
+dist
+**/*_test.go
+coverage.txt
+coverage.html
