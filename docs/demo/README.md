@@ -4,9 +4,9 @@ The recording is a local `docker compose up`. Nothing in this repo is hosted.
 
 | File | What it is |
 | --- | --- |
-| [demo.mp4](demo.mp4) | 16:9, for the README and the site |
+| [demo.mp4](demo.mp4) | 16:9 terminal recording |
 | [demo-square.mp4](demo-square.mp4) | 1080×1080, larger type, for LinkedIn |
-| [demo.gif](demo.gif) | short GIF of the same run, embedded at the top of the README |
+| [demo.gif](demo.gif) | GIF of the same run, in the README's Terminal walkthrough |
 
 Host ports default to 8080 (gateway), 8081 (echo-server), and 16686 (Jaeger UI). The published recording sets `GATEWAY_PORT=18080` so it does not bind 8080. Override `ECHO_PORT`, `JAEGER_UI_PORT`, `JAEGER_OTLP_GRPC_PORT`, or `JAEGER_OTLP_HTTP_PORT` the same way when those ports are taken. Container ports stay 8080, 8081, 4317, and 4318.
 

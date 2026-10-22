@@ -7,13 +7,13 @@ Open-source MCP (Model Context Protocol) gateway. It sits between MCP clients an
 - writes one JSON audit line per call, with argument values redacted unless a field is allowlisted
 - exports OpenTelemetry traces to Jaeger
 
+[![Watch the explainer](docs/media/explainer-cover.png)](docs/media/explainer.mp4)
+
+Watch the 86-second explainer: how the gateway authenticates, enforces the tool allowlist, audits and traces every MCP call.
+
+Square cut: [explainer-square.mp4](docs/media/explainer-square.mp4).
+
 The gateway terminates the client session and opens its own session upstream. [ADR-001](docs/adr/0001-runtime-e-transporte.md) records the transport. [ADR-002](docs/adr/0002-modelo-de-policy.md) records the allowlist. [ADR-003](docs/adr/0003-audit-e-redacao.md) records what the audit line keeps. [docs/learning-log.md](docs/learning-log.md) is the short version of the trade-offs.
-
-The project is shown with a recorded local run. Nothing is hosted.
-
-![Demo: the allowlist drops delete_everything, then the call is denied](docs/demo/demo.gif)
-
-16:9 recording: [docs/demo/demo.mp4](docs/demo/demo.mp4). Square cut for LinkedIn: [docs/demo/demo-square.mp4](docs/demo/demo-square.mp4). The tapes and the script are in [docs/demo](docs/demo).
 
 ## Architecture
 
@@ -113,6 +113,14 @@ A denied call looks like this, with the argument value redacted:
 
 A request without a key is HTTP 401. Hitting echo-server on port 8081 directly still returns `delete_everything`; that server has no allowlist.
 
+### Terminal walkthrough
+
+The same local run, recorded in a terminal. Nothing is hosted.
+
+![Terminal walkthrough: the allowlist drops delete_everything, then the call is denied](docs/demo/demo.gif)
+
+16:9: [docs/demo/demo.mp4](docs/demo/demo.mp4). Square: [docs/demo/demo-square.mp4](docs/demo/demo-square.mp4). Tapes and script: [docs/demo](docs/demo).
+
 ## Configuration
 
 Flags, then environment, then the YAML file, then the built-in fallback.
@@ -188,7 +196,8 @@ internal/config/          YAML loader
 examples/echo-server/     upstream MCP server for tests and the video
 examples/config/          development auth and allowlist
 docs/adr/                 ADR-001, ADR-002, ADR-003
-docs/demo/                VHS tape and the demo script
+docs/media/               explainer video and cover
+docs/demo/                terminal walkthrough, VHS tapes, and script
 docs/learning-log.md      decisions and trade-offs
 ```
 
