@@ -51,6 +51,11 @@ policy:
   clients:
     demo:
       tools: [echo, time]
+audit:
+  argument_fields: [message]
+telemetry:
+  service_name: mcp-gateway
+  otlp_endpoint: http://jaeger:4318
 `
 	file, err := decode(strings.NewReader(doc))
 	if err != nil {
@@ -67,6 +72,12 @@ policy:
 	}
 	if got := file.Policy.Clients["demo"].Tools; len(got) != 2 || got[0] != "echo" {
 		t.Fatalf("tools = %#v", got)
+	}
+	if len(file.Audit.ArgumentFields) != 1 || file.Audit.ArgumentFields[0] != "message" {
+		t.Fatalf("audit = %+v", file.Audit)
+	}
+	if file.Telemetry.OTLPEndpoint != "http://jaeger:4318" || file.Telemetry.ServiceName != "mcp-gateway" {
+		t.Fatalf("telemetry = %+v", file.Telemetry)
 	}
 
 	if _, err := Load(""); err != nil {
@@ -91,6 +102,8 @@ func TestLoadRejects(t *testing.T) {
 		{name: "empty tool", yaml: "auth:\n  api_keys:\n    - {id: demo, key: k}\npolicy:\n  clients:\n    demo:\n      tools: ['']\n", want: "empty tool"},
 		{name: "duplicate tool", yaml: "auth:\n  api_keys:\n    - {id: demo, key: k}\npolicy:\n  clients:\n    demo:\n      tools: [echo, echo]\n", want: "more than once"},
 		{name: "unknown field", yaml: "listen: :8080\nnope: 1\n", want: "not found"},
+		{name: "empty audit field", yaml: "audit:\n  argument_fields: ['']\n", want: "argument field"},
+		{name: "duplicate audit field", yaml: "audit:\n  argument_fields: [message, message]\n", want: "more than once"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

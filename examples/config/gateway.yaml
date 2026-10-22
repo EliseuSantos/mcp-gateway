@@ -25,3 +25,13 @@ policy:
       tools: [echo, time]
     admin:
       tools: [echo, time, delete_everything]
+
+audit:
+  # Values of these argument fields are written to the audit log.
+  # Every other argument value is the string "[redacted]".
+  argument_fields: [message]
+
+telemetry:
+  service_name: mcp-gateway
+  # otlp_endpoint is left unset here. Compose sets
+  # OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318, which wins over this file.

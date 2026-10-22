@@ -20,10 +20,12 @@ import (
 
 // File is the YAML document. Nil Auth and Policy mean the pass-through.
 type File struct {
-	Listen   string      `yaml:"listen"`
-	Upstream string      `yaml:"upstream"`
-	Auth     *AuthFile   `yaml:"auth"`
-	Policy   *PolicyFile `yaml:"policy"`
+	Listen    string        `yaml:"listen"`
+	Upstream  string        `yaml:"upstream"`
+	Auth      *AuthFile     `yaml:"auth"`
+	Policy    *PolicyFile   `yaml:"policy"`
+	Audit     AuditFile     `yaml:"audit"`
+	Telemetry TelemetryFile `yaml:"telemetry"`
 }
 
 // AuthFile is the `auth` section.
@@ -59,6 +61,20 @@ type PolicyFile struct {
 // ClientFile is the allowlist for one client id.
 type ClientFile struct {
 	Tools []string `yaml:"tools"`
+}
+
+// AuditFile is the `audit` section. ArgumentFields are the tool-argument
+// names whose values are copied into the audit line. Every other value is
+// redacted. An empty list redacts all of them.
+type AuditFile struct {
+	ArgumentFields []string `yaml:"argument_fields"`
+}
+
+// TelemetryFile is the `telemetry` section. The OTLP endpoint environment
+// variable overrides OTLPEndpoint. An empty endpoint disables export.
+type TelemetryFile struct {
+	ServiceName  string `yaml:"service_name"`
+	OTLPEndpoint string `yaml:"otlp_endpoint"`
 }
 
 // Load reads path. An empty path is an empty file, which is the pass-through.
@@ -99,6 +115,9 @@ func decode(r io.Reader) (File, error) {
 // when it builds the verifier, so a missing file fails startup with the
 // path in the error.
 func (f File) Validate() error {
+	if err := f.Audit.validate(); err != nil {
+		return err
+	}
 	switch {
 	case f.Auth == nil && f.Policy == nil:
 		return nil
@@ -149,6 +168,20 @@ func (j JWTFile) validate() error {
 	}
 	if strings.TrimSpace(j.HMACSecret) == "" && rsaSources == 0 {
 		return errors.New("config: jwt requires hmac_secret, a public key, or jwks_url")
+	}
+	return nil
+}
+
+func (a AuditFile) validate() error {
+	seen := make(map[string]struct{}, len(a.ArgumentFields))
+	for _, field := range a.ArgumentFields {
+		if strings.TrimSpace(field) == "" {
+			return errors.New("config: audit argument field name is empty")
+		}
+		if _, ok := seen[field]; ok {
+			return fmt.Errorf("config: audit argument field %s is listed more than once", field)
+		}
+		seen[field] = struct{}{}
 	}
 	return nil
 }

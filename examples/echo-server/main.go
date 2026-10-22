@@ -11,8 +11,11 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
+
+	"github.com/EliseuSantos/mcp-gateway/internal/telemetry"
 )
 
 func main() {
@@ -20,14 +23,34 @@ func main() {
 	flag.Parse()
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
-	srv := &http.Server{
-		Addr:              *addr,
-		Handler:           NewHandler(Options{}),
-		ReadHeaderTimeout: 5 * time.Second,
-	}
-
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	handler := http.Handler(NewHandler(Options{}))
+	if endpoint := strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")); endpoint != "" {
+		name := strings.TrimSpace(os.Getenv("OTEL_SERVICE_NAME"))
+		if name == "" {
+			name = serverName
+		}
+		shutdown, err := telemetry.Setup(ctx, telemetry.Config{ServiceName: name, Endpoint: endpoint})
+		if err != nil {
+			logger.Error("telemetry", "err", err)
+			os.Exit(1)
+		}
+		defer func() {
+			if err := shutdown(context.Background()); err != nil {
+				logger.Error("telemetry shutdown", "err", err)
+			}
+		}()
+		handler = telemetry.WrapHandler(handler)
+		logger.Info("tracing", "endpoint", endpoint, "service", name)
+	}
+
+	srv := &http.Server{
+		Addr:              *addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
 
 	errCh := make(chan error, 1)
 	go func() {

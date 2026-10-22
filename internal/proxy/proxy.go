@@ -68,6 +68,10 @@ type Config struct {
 
 	// HTTPMiddleware wraps /mcp only, outermost first.
 	HTTPMiddleware []HTTPMiddleware
+
+	// Metrics is served at /metrics. It is not wrapped by HTTPMiddleware,
+	// so a scrape does not need a credential. Nil leaves the route unmounted.
+	Metrics http.Handler
 }
 
 // Proxy is the pass-through gateway.
@@ -121,7 +125,7 @@ func New(cfg Config) (*Proxy, error) {
 		sessions: newSessionStore(),
 	}
 	p.handle = chain(p.forwardPOST, cfg.Middleware)
-	p.handler = p.routes(cfg.HTTPMiddleware)
+	p.handler = p.routes(cfg.HTTPMiddleware, cfg.Metrics)
 	return p, nil
 }
 
@@ -168,7 +172,7 @@ func (p *Proxy) Run(ctx context.Context) error {
 	}
 }
 
-func (p *Proxy) routes(middleware []HTTPMiddleware) http.Handler {
+func (p *Proxy) routes(middleware []HTTPMiddleware, metrics http.Handler) http.Handler {
 	var mcp http.Handler = http.HandlerFunc(p.serveMCP)
 	for i := len(middleware) - 1; i >= 0; i-- {
 		mcp = middleware[i](mcp)
@@ -177,8 +181,16 @@ func (p *Proxy) routes(middleware []HTTPMiddleware) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle(p.path, mcp)
 	mux.HandleFunc("/healthz", healthz)
+	if metrics != nil {
+		mux.Handle("/metrics", metrics)
+	}
 	return mux
 }
+
+// UpstreamTransport is the HTTP transport used for upstream MCP calls.
+// Compression is disabled so a buffered JSON body stays the bytes the
+// upstream sent. The composition root may wrap the result.
+func UpstreamTransport() *http.Transport { return newTransport() }
 
 func (p *Proxy) serveMCP(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {

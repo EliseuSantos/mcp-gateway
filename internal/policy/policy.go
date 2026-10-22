@@ -111,6 +111,7 @@ func (p *Policy) Middleware() proxy.Middleware {
 			if resp.Stream != nil {
 				_ = resp.Stream.Close()
 				resp.Stream = nil
+				call.Decision = "deny"
 				return proxy.JSONRPCError(call.ID, proxy.CodeInternalError, "tools/list could not be filtered"), nil
 			}
 			if resp.UpstreamStatus >= 300 || (resp.UpstreamStatus != 0 && resp.UpstreamStatus < 200) {
@@ -121,6 +122,7 @@ func (p *Policy) Middleware() proxy.Middleware {
 				return err == nil && decision.Allowed
 			})
 			if err != nil {
+				call.Decision = "deny"
 				return proxy.JSONRPCError(call.ID, proxy.CodeInternalError, "tools/list could not be filtered"), nil
 			}
 			resp.Body = filtered

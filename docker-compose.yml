@@ -7,6 +7,11 @@ services:
       dockerfile: examples/echo-server/Dockerfile
     ports:
       - "8081:8081"
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+      OTEL_SERVICE_NAME: echo-server
+    depends_on:
+      - jaeger
 
   jaeger:
     image: jaegertracing/jaeger:2.22.0
@@ -31,8 +36,8 @@ services:
     volumes:
       - ./examples/config/gateway.yaml:/etc/mcp-gateway/gateway.yaml:ro
     environment:
-      # Read by the process once tracing is wired. Safe to set before that.
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+      OTEL_SERVICE_NAME: mcp-gateway
     depends_on:
       - echo-server
       - jaeger

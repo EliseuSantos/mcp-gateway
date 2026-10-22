@@ -3,7 +3,9 @@
 //
 // With a config file that sets auth and policy, every /mcp request must
 // authenticate and tools are limited to that client's allowlist. Without
-// that file the process is the pass-through proxy.
+// that file the process is the pass-through proxy. Either way, each
+// JSON-RPC request writes an audit line to stdout. Traces are exported
+// when an OTLP endpoint is configured.
 package main
 
 import (
@@ -12,6 +14,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -28,7 +31,7 @@ import (
 var (
 	_ auth.Authenticator = (*auth.Credentials)(nil)
 	_ policy.Allowlist   = (*policy.Policy)(nil)
-	_ audit.Logger       = audit.Unimplemented{}
+	_ audit.Logger       = (*audit.Writer)(nil)
 )
 
 func main() {
@@ -58,25 +61,43 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	shutdown, telErr := telemetry.Setup(ctx, telemetry.Config{
-		ServiceName: "mcp-gateway",
-		Endpoint:    "127.0.0.1:4318",
+	endpoint := config.Pick("", false, os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"), file.Telemetry.OTLPEndpoint, "")
+	service := config.Pick("", false, os.Getenv("OTEL_SERVICE_NAME"), file.Telemetry.ServiceName, "mcp-gateway")
+	shutdown, err := telemetry.Setup(ctx, telemetry.Config{
+		ServiceName: service,
+		Endpoint:    endpoint,
 	})
+	if err != nil {
+		logger.Error("telemetry", "err", err)
+		os.Exit(1)
+	}
 	defer func() {
 		if err := shutdown(context.Background()); err != nil {
 			logger.Error("telemetry shutdown", "err", err)
 		}
 	}()
-	if telErr != nil {
-		logger.Warn("telemetry is not wired yet", "err", telErr)
+	if endpoint != "" {
+		logger.Info("tracing", "endpoint", endpoint, "service", service)
 	}
+
+	auditLog, err := audit.New(os.Stdout, file.Audit.ArgumentFields, logger)
+	if err != nil {
+		logger.Error("audit", "err", err)
+		os.Exit(1)
+	}
+	logger.Info("audit", "argument_fields", file.Audit.ArgumentFields)
+	metrics := telemetry.NewMetrics()
+	rpcMW = append([]proxy.Middleware{telemetry.Middleware(metrics), auditLog.Middleware()}, rpcMW...)
+	httpMW = append([]proxy.HTTPMiddleware{telemetry.HTTPMiddleware()}, httpMW...)
 
 	gw, err := proxy.New(proxy.Config{
 		ListenAddr:     listen,
 		UpstreamURL:    upstream,
 		Logger:         logger,
+		Client:         &http.Client{Transport: telemetry.WrapTransport(proxy.UpstreamTransport())},
 		Middleware:     rpcMW,
 		HTTPMiddleware: httpMW,
+		Metrics:        metrics.Handler(),
 	})
 	if err != nil {
 		logger.Error("config", "err", err)

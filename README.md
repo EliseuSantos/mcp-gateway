@@ -7,7 +7,7 @@ Open-source MCP (Model Context Protocol) gateway. It sits between MCP clients an
 - a structured JSON audit log
 - OpenTelemetry tracing
 
-**Status: work in progress.** The gateway authenticates a client and enforces a per-client tool allowlist. The audit log and tracing are still stubs. [ADR-001](docs/adr/0001-runtime-e-transporte.md) records the transport. [ADR-002](docs/adr/0002-modelo-de-policy.md) records the allowlist.
+**Status: work in progress.** The gateway authenticates a client, enforces a per-client tool allowlist, writes one JSON audit line per call, and exports traces to Jaeger when an OTLP endpoint is set. [ADR-001](docs/adr/0001-runtime-e-transporte.md) records the transport. [ADR-002](docs/adr/0002-modelo-de-policy.md) records the allowlist. [ADR-003](docs/adr/0003-audit-e-redacao.md) records what the audit line keeps.
 
 The project is shown with a recorded local run. Nothing is hosted.
 
@@ -33,7 +33,7 @@ flowchart LR
   traces -.->|OTLP| jaeger
 ```
 
-The client, the gateway, and `echo-server` speak Streamable HTTP. Auth and the allowlist run in the gateway. Audit and telemetry are still stubs. The gateway mints the session id the client sees; the upstream session id stays inside the process.
+The client, the gateway, and `echo-server` speak Streamable HTTP. Auth and the allowlist run in the gateway. Each JSON-RPC request appends one audit object to stdout. When `OTEL_EXPORTER_OTLP_ENDPOINT` is set, the gateway and the echo server export spans to Jaeger on one trace. The gateway mints the session id the client sees; the upstream session id stays inside the process and is not written to the audit log.
 
 ## Layout
 
@@ -42,10 +42,10 @@ cmd/mcp-gateway/          entrypoint
 internal/proxy/           Streamable HTTP pass-through and its middleware hooks
 internal/auth/            API key and JWT
 internal/policy/          per-client tool allowlist
-internal/audit/           structured JSON audit log, stub
-internal/telemetry/       OpenTelemetry exporter, stub
+internal/audit/           JSON audit log, one object per call
+internal/telemetry/       OTLP traces and /metrics
 examples/echo-server/     upstream MCP server for tests and the video
-docs/adr/                 ADR-001, ADR-002, and the template
+docs/adr/                 ADR-001, ADR-002, ADR-003, and the template
 examples/config/          development auth and allowlist used by Compose
 ```
 
@@ -97,6 +97,8 @@ make run
 | `delete_everything` | marked destructive, and only replies that nothing was deleted |
 
 `delete_everything` is the tool the demo client is not allowed to call. Hitting echo-server directly still returns it. Through the gateway, with `Authorization: Bearer dev-demo-key`, `tools/list` omits it and `tools/call` returns a JSON-RPC error. `dev-admin-key` is allowed to call it. The keys are development values.
+
+Each JSON-RPC request that passes authentication writes one JSON object to stdout. Argument values are `[redacted]` unless the field is listed in `audit.argument_fields`. The example config lists `message`, so an `echo` call logs that text and redacts every other field. A denied `tools/call` has `"decision":"deny"` and `"upstream_status":0`. `GET /metrics` counts requests by method and decision and does not require a key. Traces show up in Jaeger at `http://127.0.0.1:16686` when Compose is running. Spans carry the method, the tool, the client, and the decision. They do not carry arguments.
 
 ### Call it with curl
 
@@ -151,7 +153,7 @@ Week 1 milestone: [Semana 1: esqueleto e proxy](https://github.com/EliseuSantos/
 - [#4](https://github.com/EliseuSantos/mcp-gateway/issues/4) — pass-through proxy and an integration test
 - [#5](https://github.com/EliseuSantos/mcp-gateway/issues/5) — learning log and the week-1 diagram
 
-Auth and the allowlist are in place. The audit log and tracing come next.
+Auth, the allowlist, the audit log, and tracing are in place. The release notes, the learning log, and the demo tape come next.
 
 ## License
 
