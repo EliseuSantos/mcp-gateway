@@ -1,0 +1,27 @@
+# Development config mounted by docker-compose.
+# The keys below are for a local demo. Do not reuse them anywhere else.
+
+listen: ":8080"
+upstream: http://echo-server:8081/mcp
+
+auth:
+  api_keys:
+    - id: demo
+      key: dev-demo-key
+    - id: admin
+      key: dev-admin-key
+  # JWT is optional beside the keys. Uncomment one RS256 source at a time.
+  # jwt:
+  #   hmac_secret: dev-only-hmac-secret
+  #   issuer: mcp-gateway
+  #   audience: mcp-gateway
+  #   # client_id_claim: sub
+  #   # public_key_file: /etc/mcp-gateway/jwt.pub
+  #   # jwks_url: https://example.test/.well-known/jwks.json
+
+policy:
+  clients:
+    demo:
+      tools: [echo, time]
+    admin:
+      tools: [echo, time, delete_everything]

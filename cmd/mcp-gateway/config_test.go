@@ -12,47 +12,28 @@ func TestParseArgs(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
-		name     string
-		args     []string
-		env      map[string]string
-		listen   string
-		upstream string
-		wantErr  bool
-		help     bool
+		name    string
+		args    []string
+		env     map[string]string
+		want    flagInput
+		wantErr bool
+		help    bool
 	}{
+		{name: "defaults"},
 		{
-			name:     "defaults",
-			listen:   ":8080",
-			upstream: "http://127.0.0.1:8081/mcp",
+			name: "config from env",
+			env:  map[string]string{"MCP_GATEWAY_CONFIG": "gateway.yaml"},
+			want: flagInput{ConfigPath: "gateway.yaml"},
 		},
 		{
-			name:     "env",
-			env:      map[string]string{"MCP_GATEWAY_LISTEN": ":9090", "MCP_GATEWAY_UPSTREAM": "http://echo:8081/mcp"},
-			listen:   ":9090",
-			upstream: "http://echo:8081/mcp",
+			name: "flags",
+			args: []string{"-listen", ":7", "-upstream", "http://flags.test/mcp", "-config", "other.yaml"},
+			env:  map[string]string{"MCP_GATEWAY_CONFIG": "gateway.yaml"},
+			want: flagInput{Listen: ":7", ListenSet: true, Upstream: "http://flags.test/mcp", UpstreamSet: true, ConfigPath: "other.yaml"},
 		},
-		{
-			name:     "flags win",
-			args:     []string{"-listen", ":7", "-upstream", "http://flags.test/mcp"},
-			env:      map[string]string{"MCP_GATEWAY_LISTEN": ":9090", "MCP_GATEWAY_UPSTREAM": "http://env.test/mcp"},
-			listen:   ":7",
-			upstream: "http://flags.test/mcp",
-		},
-		{
-			name:    "unknown flag",
-			args:    []string{"-nope"},
-			wantErr: true,
-		},
-		{
-			name:    "extra arg",
-			args:    []string{"extra"},
-			wantErr: true,
-		},
-		{
-			name: "help",
-			args: []string{"-h"},
-			help: true,
-		},
+		{name: "unknown flag", args: []string{"-nope"}, wantErr: true},
+		{name: "extra arg", args: []string{"extra"}, wantErr: true},
+		{name: "help", args: []string{"-h"}, help: true},
 	}
 
 	for _, tc := range cases {
@@ -78,8 +59,8 @@ func TestParseArgs(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got.Listen != tc.listen || got.Upstream != tc.upstream {
-				t.Fatalf("got %+v", got)
+			if got != tc.want {
+				t.Fatalf("got %+v, want %+v", got, tc.want)
 			}
 		})
 	}

@@ -19,9 +19,17 @@ services:
     build:
       context: .
       dockerfile: cmd/mcp-gateway/Dockerfile
-    command: ["-listen", ":8080", "-upstream", "http://echo-server:8081/mcp"]
+    command:
+      - -listen
+      - :8080
+      - -upstream
+      - http://echo-server:8081/mcp
+      - -config
+      - /etc/mcp-gateway/gateway.yaml
     ports:
       - "8080:8080"
+    volumes:
+      - ./examples/config/gateway.yaml:/etc/mcp-gateway/gateway.yaml:ro
     environment:
       # Read by the process once tracing is wired. Safe to set before that.
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318

@@ -7,7 +7,7 @@ Open-source MCP (Model Context Protocol) gateway. It sits between MCP clients an
 - a structured JSON audit log
 - OpenTelemetry tracing
 
-**Status: work in progress.** The pass-through proxy and the example MCP server run locally, with Jaeger beside them. Auth, the allowlist, the audit log, and tracing are still stubs. [ADR-001](docs/adr/0001-runtime-e-transporte.md) records the runtime, the transport, and why the gateway terminates sessions instead of relaying them.
+**Status: work in progress.** The gateway authenticates a client and enforces a per-client tool allowlist. The audit log and tracing are still stubs. [ADR-001](docs/adr/0001-runtime-e-transporte.md) records the transport. [ADR-002](docs/adr/0002-modelo-de-policy.md) records the allowlist.
 
 The project is shown with a recorded local run. Nothing is hosted.
 
@@ -33,19 +33,20 @@ flowchart LR
   traces -.->|OTLP| jaeger
 ```
 
-The client, the gateway, and `echo-server` speak Streamable HTTP today. Auth, policy, audit, and telemetry are the stubs around that path. The gateway mints the session id the client sees; the upstream session id stays inside the process.
+The client, the gateway, and `echo-server` speak Streamable HTTP. Auth and the allowlist run in the gateway. Audit and telemetry are still stubs. The gateway mints the session id the client sees; the upstream session id stays inside the process.
 
 ## Layout
 
 ```text
 cmd/mcp-gateway/          entrypoint
 internal/proxy/           Streamable HTTP pass-through and its middleware hooks
-internal/auth/            API key and JWT, stub
-internal/policy/          per-client tool allowlist, stub
+internal/auth/            API key and JWT
+internal/policy/          per-client tool allowlist
 internal/audit/           structured JSON audit log, stub
 internal/telemetry/       OpenTelemetry exporter, stub
 examples/echo-server/     upstream MCP server for tests and the video
-docs/adr/                 ADR-001 and the template
+docs/adr/                 ADR-001, ADR-002, and the template
+examples/config/          development auth and allowlist used by Compose
 ```
 
 The interfaces under `internal/` are a sketch so the packages compile and `cmd/mcp-gateway` has a place to wire them. They are not a frozen API.
@@ -70,7 +71,15 @@ docker compose up --build
 - echo-server: `http://127.0.0.1:8081/mcp`, health `http://127.0.0.1:8081/healthz`
 - Jaeger UI: `http://127.0.0.1:16686`
 
-The gateway listens on `:8080` and forwards to `http://echo-server:8081/mcp`. Nothing is filtered yet: `tools/list` returns `echo`, `time`, and `delete_everything`.
+The gateway listens on `:8080` and forwards to `http://echo-server:8081/mcp`. Compose mounts [`examples/config/gateway.yaml`](examples/config/gateway.yaml). The `demo` key may call `echo` and `time`. The `admin` key may also call `delete_everything`. A request without a key is HTTP 401.
+
+```bash
+curl -sS http://127.0.0.1:8080/mcp \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -H 'Authorization: Bearer dev-demo-key' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"curl","version":"0"}}}'
+```
 
 Without Docker, start the upstream and then the gateway:
 
@@ -87,7 +96,7 @@ make run
 | `time` | returns the current UTC time in RFC3339 |
 | `delete_everything` | marked destructive, and only replies that nothing was deleted |
 
-`delete_everything` is the stand-in a later allowlist demo will block. The pass-through still returns it.
+`delete_everything` is the tool the demo client is not allowed to call. Hitting echo-server directly still returns it. Through the gateway, with `Authorization: Bearer dev-demo-key`, `tools/list` omits it and `tools/call` returns a JSON-RPC error. `dev-admin-key` is allowed to call it. The keys are development values.
 
 ### Call it with curl
 
@@ -120,7 +129,7 @@ curl -sS http://127.0.0.1:8081/mcp \
   -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"echo","arguments":{"message":"ping"}}}'
 ```
 
-The same calls against `http://127.0.0.1:8080/mcp` go through the gateway. The `Mcp-Session-Id` in that response is the gateway's, not the upstream's.
+The same calls against `http://127.0.0.1:8080/mcp` go through the gateway when you add `Authorization: Bearer dev-demo-key` (or `X-Api-Key: dev-demo-key`). The `Mcp-Session-Id` in that response is the gateway's, not the upstream's. `delete_everything` is not in the demo client's `tools/list`.
 
 ## Tests and lint
 
@@ -142,7 +151,7 @@ Week 1 milestone: [Semana 1: esqueleto e proxy](https://github.com/EliseuSantos/
 - [#4](https://github.com/EliseuSantos/mcp-gateway/issues/4) — pass-through proxy and an integration test
 - [#5](https://github.com/EliseuSantos/mcp-gateway/issues/5) — learning log and the week-1 diagram
 
-Auth, the allowlist, the audit log, and tracing come next. The proxy already has the middleware hooks they will use.
+Auth and the allowlist are in place. The audit log and tracing come next.
 
 ## License
 
