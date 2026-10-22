@@ -1,16 +1,19 @@
-// Command mcp-gateway is the process entrypoint.
+// Command mcp-gateway terminates downstream MCP sessions and forwards
+// JSON-RPC to an upstream Streamable HTTP server.
 //
-// The proxy is not implemented. This command logs the planned wiring and
-// exits. Issue #4 replaces the body of main with a blocking serve.
-// Auth, policy, and audit are package stubs; the assignments below only
-// keep this file as the map of the process.
+// Auth, policy, and audit are still stubs. Their hook points are the HTTP
+// middleware and the JSON-RPC middleware on [proxy.Config]. Wire them there
+// when those packages stop returning ErrNotImplemented.
 package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"log/slog"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/EliseuSantos/mcp-gateway/internal/audit"
 	"github.com/EliseuSantos/mcp-gateway/internal/auth"
@@ -27,30 +30,45 @@ var (
 )
 
 func main() {
-	listen := flag.String("listen", ":8080", "downstream listen address (unused until issue #4)")
-	upstream := flag.String("upstream", "http://127.0.0.1:8081/mcp", "upstream MCP endpoint (unused until issue #4)")
-	flag.Parse()
+	cfg, err := parseArgs(os.Args[1:], os.Getenv, os.Stderr)
+	if err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			os.Exit(0)
+		}
+		os.Exit(2)
+	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
-	ctx := context.Background()
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
 	shutdown, telErr := telemetry.Setup(ctx, telemetry.Config{
 		ServiceName: "mcp-gateway",
 		Endpoint:    "127.0.0.1:4318",
 	})
 	defer func() {
-		if err := shutdown(ctx); err != nil {
+		if err := shutdown(context.Background()); err != nil {
 			logger.Error("telemetry shutdown", "err", err)
 		}
 	}()
+	if telErr != nil {
+		logger.Warn("telemetry is not wired yet", "err", telErr)
+	}
 
-	p := proxy.New(proxy.Config{ListenAddr: *listen, UpstreamURL: *upstream})
-	logger.Info("mcp-gateway scaffold; proxy is not implemented",
-		"listen", *listen,
-		"upstream", *upstream,
-		"proxy_err", p.Run(ctx),
-		"telemetry_err", telErr,
-	)
-	logger.Info("next: issue #4 implements the pass-through; auth, policy, and audit stay stubs until then")
-	logger.Info("example upstream", "command", "go run ./examples/echo-server")
+	// Extension points, left empty until the packages are real:
+	//   HTTPMiddleware: auth, before the JSON-RPC body is parsed.
+	//   Middleware:     policy (outer) then audit (around the forward).
+	gw, err := proxy.New(proxy.Config{
+		ListenAddr:  cfg.Listen,
+		UpstreamURL: cfg.Upstream,
+		Logger:      logger,
+	})
+	if err != nil {
+		logger.Error("config", "err", err)
+		os.Exit(1)
+	}
+	if err := gw.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+		logger.Error("serve", "err", err)
+		os.Exit(1)
+	}
 }

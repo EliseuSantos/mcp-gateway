@@ -15,20 +15,16 @@ services:
       - "4317:4317" # OTLP gRPC
       - "4318:4318" # OTLP HTTP
 
-  # The gateway service stays commented until the pass-through proxy exists
-  # (issue #4). cmd/mcp-gateway exits immediately today, so uncommenting this
-  # block would only restart the container. The Dockerfile it points at is
-  # part of that same issue.
-  #
-  # gateway:
-  #   build:
-  #     context: .
-  #     dockerfile: cmd/mcp-gateway/Dockerfile
-  #   command: ["-listen", ":8080", "-upstream", "http://echo-server:8081/mcp"]
-  #   ports:
-  #     - "8080:8080"
-  #   environment:
-  #     OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
-  #   depends_on:
-  #     - echo-server
-  #     - jaeger
+  gateway:
+    build:
+      context: .
+      dockerfile: cmd/mcp-gateway/Dockerfile
+    command: ["-listen", ":8080", "-upstream", "http://echo-server:8081/mcp"]
+    ports:
+      - "8080:8080"
+    environment:
+      # Read by the process once tracing is wired. Safe to set before that.
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+    depends_on:
+      - echo-server
+      - jaeger

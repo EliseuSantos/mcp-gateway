@@ -1,6 +1,6 @@
 # ADR-NNNN: Title
 
-Copy this file to `docs/adr/NNNN-short-title.md`. ADR-001 (runtime and transport) is [issue #1](https://github.com/EliseuSantos/mcp-gateway/issues/1) and is intentionally not written in this repository yet.
+Copy this file to `docs/adr/NNNN-short-title.md` and number new ADRs sequentially. ADR-001 is [0001-runtime-e-transporte.md](0001-runtime-e-transporte.md).
 
 ## Status
 

@@ -1,7 +1,8 @@
 // Package auth authenticates gateway clients with an API key or a JWT.
 //
-// Not implemented. It plugs into the proxy after issue #4. No ticket is
-// filed for the authenticators yet.
+// Not implemented. The proxy's HTTP middleware is where this will accept or
+// reject a request before the JSON-RPC body is parsed, and where it will
+// store the client id with [proxy.WithPrincipal].
 //
 // The interface is a sketch. Change it when the real middleware lands.
 package auth

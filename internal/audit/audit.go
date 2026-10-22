@@ -1,7 +1,9 @@
 // Package audit writes one structured JSON record per gateway decision.
 //
-// Not implemented. The intended record is a single JSON object so a denied
-// delete_everything call can be shown in the video. It follows issue #4.
+// Not implemented. It will be a proxy.Middleware around the upstream forward
+// so one record can include the decision, the latency, and the upstream
+// status. The intended record is a single JSON object so a denied
+// delete_everything call can be shown in the video.
 //
 // The event shape is a sketch. Change it when the logger lands.
 package audit

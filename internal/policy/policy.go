@@ -1,9 +1,9 @@
 // Package policy is the per-client tool allowlist.
 //
-// When implemented, it filters tools/list and denies tools/call for tools
-// the client is not allowed to use. The example server's delete_everything
-// tool exists so a later demo can show that denial. Not implemented; it
-// follows the pass-through proxy (issue #4).
+// Not implemented. It will be a proxy.Middleware: reject a disallowed
+// tools/call before the upstream forward, and filter a buffered tools/list
+// on the way back. The example server's delete_everything tool is the
+// denial the demo will show.
 //
 // The interface is a sketch. Change it when the real allowlist lands.
 package policy
