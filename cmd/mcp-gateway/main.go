@@ -28,6 +28,9 @@ import (
 	"github.com/EliseuSantos/mcp-gateway/internal/telemetry"
 )
 
+// version is the build version. Goreleaser sets it with -X main.version.
+var version = "dev"
+
 var (
 	_ auth.Authenticator = (*auth.Credentials)(nil)
 	_ policy.Allowlist   = (*policy.Policy)(nil)
@@ -44,6 +47,7 @@ func main() {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	logger.Info("starting", "version", version)
 	file, err := config.Load(flags.ConfigPath)
 	if err != nil {
 		logger.Error("config", "err", err)

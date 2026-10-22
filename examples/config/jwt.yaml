@@ -1,0 +1,21 @@
+# HS256 example. Not mounted by Compose.
+# The client id is the `sub` claim. `exp` is required.
+# `iss` and `aud` are checked because they are set here.
+# The HMAC secret is a development value. Do not reuse it.
+
+listen: ":8080"
+upstream: http://127.0.0.1:8081/mcp
+
+auth:
+  jwt:
+    hmac_secret: dev-only-hmac-secret
+    issuer: mcp-gateway
+    audience: mcp-gateway
+
+policy:
+  clients:
+    demo:
+      tools: [echo, time]
+
+audit:
+  argument_fields: [message]

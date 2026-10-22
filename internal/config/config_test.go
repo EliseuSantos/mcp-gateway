@@ -85,6 +85,23 @@ telemetry:
 	}
 }
 
+func TestExampleConfigs(t *testing.T) {
+	t.Parallel()
+
+	for _, path := range []string{
+		"../../examples/config/gateway.yaml",
+		"../../examples/config/jwt.yaml",
+	} {
+		file, err := Load(path)
+		if err != nil {
+			t.Fatalf("Load(%s) error = %v", path, err)
+		}
+		if file.Auth == nil || file.Policy == nil {
+			t.Fatalf("Load(%s) auth/policy = nil", path)
+		}
+	}
+}
+
 func TestLoadRejects(t *testing.T) {
 	t.Parallel()
 

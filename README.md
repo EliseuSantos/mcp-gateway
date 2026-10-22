@@ -1,15 +1,15 @@
 # mcp-gateway
 
-Open-source MCP (Model Context Protocol) gateway. It sits between MCP clients and MCP servers and will add:
+Open-source MCP (Model Context Protocol) gateway. It sits between MCP clients and MCP servers and, in v0.1.0, does four things:
 
-- authentication with an API key or a JWT
-- a per-client tool allowlist (filter `tools/list`, deny `tools/call`)
-- a structured JSON audit log
-- OpenTelemetry tracing
+- authenticates each request with an API key or a JWT
+- enforces a per-client tool allowlist (filters `tools/list`, denies `tools/call`)
+- writes one JSON audit line per call, with argument values redacted unless a field is allowlisted
+- exports OpenTelemetry traces to Jaeger
 
-**Status: work in progress.** The gateway authenticates a client, enforces a per-client tool allowlist, writes one JSON audit line per call, and exports traces to Jaeger when an OTLP endpoint is set. [ADR-001](docs/adr/0001-runtime-e-transporte.md) records the transport. [ADR-002](docs/adr/0002-modelo-de-policy.md) records the allowlist. [ADR-003](docs/adr/0003-audit-e-redacao.md) records what the audit line keeps.
+The gateway terminates the client session and opens its own session upstream. [ADR-001](docs/adr/0001-runtime-e-transporte.md) records the transport. [ADR-002](docs/adr/0002-modelo-de-policy.md) records the allowlist. [ADR-003](docs/adr/0003-audit-e-redacao.md) records what the audit line keeps. [docs/learning-log.md](docs/learning-log.md) is the short version of the trade-offs.
 
-The project is shown with a recorded local run. Nothing is hosted.
+The project is shown with a recorded local run. Nothing is hosted. The tape is in [docs/demo](docs/demo).
 
 ## Architecture
 
@@ -17,78 +17,131 @@ The project is shown with a recorded local run. Nothing is hosted.
 flowchart LR
   client[MCP client]
   gateway[mcp-gateway]
-  auth[auth]
-  policy[policy]
-  audit[audit]
-  traces[telemetry]
   echo[echo-server]
   jaeger[Jaeger]
+  stdout[stdout]
 
   client -->|Streamable HTTP| gateway
-  gateway --> auth
-  gateway --> policy
-  gateway --> audit
-  gateway --> traces
   gateway -->|Streamable HTTP| echo
-  traces -.->|OTLP| jaeger
+  gateway -->|JSON audit line| stdout
+  gateway -->|OTLP| jaeger
+  echo -->|OTLP| jaeger
 ```
 
-The client, the gateway, and `echo-server` speak Streamable HTTP. Auth and the allowlist run in the gateway. Each JSON-RPC request appends one audit object to stdout. When `OTEL_EXPORTER_OTLP_ENDPOINT` is set, the gateway and the echo server export spans to Jaeger on one trace. The gateway mints the session id the client sees; the upstream session id stays inside the process and is not written to the audit log.
+Auth and the allowlist run inside the gateway, before a denied `tools/call` is forwarded. The client holds the gateway's session id. The upstream session id stays in the process and is not logged. `GET /metrics` on the gateway is unauthenticated and counts requests by method and decision.
 
-## Layout
+## Quickstart
 
-```text
-cmd/mcp-gateway/          entrypoint
-internal/proxy/           Streamable HTTP pass-through and its middleware hooks
-internal/auth/            API key and JWT
-internal/policy/          per-client tool allowlist
-internal/audit/           JSON audit log, one object per call
-internal/telemetry/       OTLP traces and /metrics
-examples/echo-server/     upstream MCP server for tests and the video
-docs/adr/                 ADR-001, ADR-002, ADR-003, and the template
-examples/config/          development auth and allowlist used by Compose
-```
-
-The interfaces under `internal/` are a sketch so the packages compile and `cmd/mcp-gateway` has a place to wire them. They are not a frozen API.
-
-## Requirements
-
-- Go 1.25 or newer. The module line is `go 1.25.0` because [github.com/modelcontextprotocol/go-sdk](https://github.com/modelcontextprotocol/go-sdk) v1.8.0 requires it.
-- Docker, to run the example server and Jaeger.
-- [golangci-lint](https://golangci-lint.run/) v2.11.4, for `make lint`.
-
-```bash
-go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.11.4
-```
-
-## Run
+About five minutes, with Docker and curl installed. The commands assume the repository root and free host ports 8080, 8081, and 16686.
 
 ```bash
 docker compose up --build
 ```
 
-- gateway: `http://127.0.0.1:8080/mcp` (Streamable HTTP), health `http://127.0.0.1:8080/healthz`
-- echo-server: `http://127.0.0.1:8081/mcp`, health `http://127.0.0.1:8081/healthz`
-- Jaeger UI: `http://127.0.0.1:16686`
+Leave that terminal open. In another terminal:
 
-The gateway listens on `:8080` and forwards to `http://echo-server:8081/mcp`. Compose mounts [`examples/config/gateway.yaml`](examples/config/gateway.yaml). The `demo` key may call `echo` and `time`. The `admin` key may also call `delete_everything`. A request without a key is HTTP 401.
+| URL | What it is |
+| --- | --- |
+| `http://127.0.0.1:8080/mcp` | gateway, Streamable HTTP |
+| `http://127.0.0.1:8080/healthz` | gateway health |
+| `http://127.0.0.1:8080/metrics` | request counters |
+| `http://127.0.0.1:8081/mcp` | echo-server, no auth |
+| `http://127.0.0.1:16686` | Jaeger UI |
+
+Compose mounts [`examples/config/gateway.yaml`](examples/config/gateway.yaml). The `demo` key may call `echo` and `time`. The `admin` key may also call `delete_everything`. Both keys are development values.
+
+[`docs/demo/show.sh`](docs/demo/show.sh) runs the rest of this quickstart and prints the audit line. The calls below are the same steps, written out.
+
+Initialize and keep the session id:
+
+```bash
+curl -sS -D /tmp/mcp-headers http://127.0.0.1:8080/mcp \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -H 'Authorization: Bearer dev-demo-key' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"curl","version":"0"}}}'
+
+SID=$(awk 'tolower($1)=="mcp-session-id:" {print $2}' /tmp/mcp-headers | tr -d '\r')
+
+curl -sS http://127.0.0.1:8080/mcp \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -H 'Authorization: Bearer dev-demo-key' \
+  -H "Mcp-Session-Id: $SID" \
+  -d '{"jsonrpc":"2.0","method":"notifications/initialized"}'
+```
+
+List tools. `delete_everything` is absent:
 
 ```bash
 curl -sS http://127.0.0.1:8080/mcp \
   -H 'Content-Type: application/json' \
   -H 'Accept: application/json, text/event-stream' \
   -H 'Authorization: Bearer dev-demo-key' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"curl","version":"0"}}}'
+  -H "Mcp-Session-Id: $SID" \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
 ```
 
-Without Docker, start the upstream and then the gateway:
+Call the blocked tool. The HTTP status is 200 and the body is a JSON-RPC error. The upstream is not called.
 
 ```bash
-make run-example
-make run
+curl -sS http://127.0.0.1:8080/mcp \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -H 'Authorization: Bearer dev-demo-key' \
+  -H "Mcp-Session-Id: $SID" \
+  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"delete_everything","arguments":{"confirm":"yes"}}}'
 ```
 
-`make run` reads `MCP_GATEWAY_LISTEN` and `MCP_GATEWAY_UPSTREAM` when the flags are left unset. Flags override the environment. The defaults are `:8080` and `http://127.0.0.1:8081/mcp`.
+The audit line is on the gateway's stdout. `docker compose logs` mixes it with the text log on stderr. The audit line is the JSON object:
+
+```bash
+docker compose logs gateway --no-color --no-log-prefix | grep '"decision":"deny"'
+```
+
+A denied call looks like this, with the argument value redacted:
+
+```json
+{"client":"demo","method":"tools/call","tool":"delete_everything","decision":"deny","upstream_status":0,"arguments":{"confirm":"[redacted]"}}
+```
+
+`GET http://127.0.0.1:8080/metrics` counts that deny. The trace is in Jaeger at <http://127.0.0.1:16686/search?service=mcp-gateway>. The denied call has a gateway span and no echo-server span. An allowed `echo` call has both, on one trace.
+
+A request without a key is HTTP 401. Hitting echo-server on port 8081 directly still returns `delete_everything`; that server has no allowlist.
+
+## Configuration
+
+Flags, then environment, then the YAML file, then the built-in fallback.
+
+| Flag | Environment | YAML | Fallback |
+| --- | --- | --- | --- |
+| `-listen` | `MCP_GATEWAY_LISTEN` | `listen` | `:8080` |
+| `-upstream` | `MCP_GATEWAY_UPSTREAM` | `upstream` | `http://127.0.0.1:8081/mcp` |
+| `-config` | `MCP_GATEWAY_CONFIG` | | empty, which is pass-through |
+
+`OTEL_EXPORTER_OTLP_ENDPOINT` overrides `telemetry.otlp_endpoint`. `OTEL_SERVICE_NAME` overrides `telemetry.service_name`. An empty endpoint means the process serves and does not export traces.
+
+Auth and policy are both set or both absent. One without the other is a startup error. With neither, the gateway is a pass-through and still writes audit lines.
+
+Two example files:
+
+- [`examples/config/gateway.yaml`](examples/config/gateway.yaml) is what Compose mounts. API keys `dev-demo-key` and `dev-admin-key`. `audit.argument_fields` lists `message`, so an `echo` call logs that text and redacts every other argument.
+- [`examples/config/jwt.yaml`](examples/config/jwt.yaml) is an HS256 example for a process you start yourself. The client id is the `sub` claim. `exp` is required. `iss` and `aud` are checked because the file sets them. RS256 (a PEM file or a JWKS URL) is the other source; the file comments in `gateway.yaml` show the keys.
+
+Without Docker:
+
+```bash
+make run-example   # echo-server on :8081
+make run           # gateway on :8080, pass-through, no config file
+```
+
+To apply the example allowlist outside Compose:
+
+```bash
+go run ./cmd/mcp-gateway -config examples/config/gateway.yaml -upstream http://127.0.0.1:8081/mcp
+```
+
+The upstream in that file is the Compose hostname `echo-server`. Override it with `-upstream`, as above.
 
 | Tool | Behavior |
 | --- | --- |
@@ -96,44 +149,11 @@ make run
 | `time` | returns the current UTC time in RFC3339 |
 | `delete_everything` | marked destructive, and only replies that nothing was deleted |
 
-`delete_everything` is the tool the demo client is not allowed to call. Hitting echo-server directly still returns it. Through the gateway, with `Authorization: Bearer dev-demo-key`, `tools/list` omits it and `tools/call` returns a JSON-RPC error. `dev-admin-key` is allowed to call it. The keys are development values.
+## Development
 
-Each JSON-RPC request that passes authentication writes one JSON object to stdout. Argument values are `[redacted]` unless the field is listed in `audit.argument_fields`. The example config lists `message`, so an `echo` call logs that text and redacts every other field. A denied `tools/call` has `"decision":"deny"` and `"upstream_status":0`. `GET /metrics` counts requests by method and decision and does not require a key. Traces show up in Jaeger at `http://127.0.0.1:16686` when Compose is running. Spans carry the method, the tool, the client, and the decision. They do not carry arguments.
-
-### Call it with curl
-
-Streamable HTTP keeps a session. `initialize` returns `Mcp-Session-Id`; later calls send it back. Responses are `application/json`, which the Streamable HTTP spec allows when the client accepts JSON. This server does not push server-initiated messages, so it does not open an SSE stream.
-
-```bash
-curl -sS -D /tmp/mcp-headers http://127.0.0.1:8081/mcp \
-  -H 'Content-Type: application/json' \
-  -H 'Accept: application/json, text/event-stream' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"curl","version":"0"}}}'
-
-SID=$(awk 'tolower($1)=="mcp-session-id:" {print $2}' /tmp/mcp-headers | tr -d '\r')
-
-curl -sS http://127.0.0.1:8081/mcp \
-  -H 'Content-Type: application/json' \
-  -H 'Accept: application/json, text/event-stream' \
-  -H "Mcp-Session-Id: $SID" \
-  -d '{"jsonrpc":"2.0","method":"notifications/initialized"}'
-
-curl -sS http://127.0.0.1:8081/mcp \
-  -H 'Content-Type: application/json' \
-  -H 'Accept: application/json, text/event-stream' \
-  -H "Mcp-Session-Id: $SID" \
-  -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
-
-curl -sS http://127.0.0.1:8081/mcp \
-  -H 'Content-Type: application/json' \
-  -H 'Accept: application/json, text/event-stream' \
-  -H "Mcp-Session-Id: $SID" \
-  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"echo","arguments":{"message":"ping"}}}'
-```
-
-The same calls against `http://127.0.0.1:8080/mcp` go through the gateway when you add `Authorization: Bearer dev-demo-key` (or `X-Api-Key: dev-demo-key`). The `Mcp-Session-Id` in that response is the gateway's, not the upstream's. `delete_everything` is not in the demo client's `tools/list`.
-
-## Tests and lint
+- Go 1.25 or newer. The module line is `go 1.25.0` because [github.com/modelcontextprotocol/go-sdk](https://github.com/modelcontextprotocol/go-sdk) v1.8.0 requires it.
+- Docker, to run the example server and Jaeger.
+- [golangci-lint](https://golangci-lint.run/) v2.11.4, for `make lint`.
 
 ```bash
 make test    # go test -race ./...
@@ -143,17 +163,30 @@ make build   # writes bin/mcp-gateway and bin/echo-server
 
 GitHub Actions runs the same three targets on every push and on pull requests.
 
-## Roadmap
+The gateway image is [`cmd/mcp-gateway/Dockerfile`](cmd/mcp-gateway/Dockerfile). Release binaries are [`.goreleaser.yaml`](.goreleaser.yaml):
 
-Week 1 milestone: [Semana 1: esqueleto e proxy](https://github.com/EliseuSantos/mcp-gateway/milestone/1).
+```bash
+goreleaser release --clean
+```
 
-- [#1](https://github.com/EliseuSantos/mcp-gateway/issues/1) — ADR-001, runtime and transport
-- [#2](https://github.com/EliseuSantos/mcp-gateway/issues/2) — repository skeleton, lint, and CI
-- [#3](https://github.com/EliseuSantos/mcp-gateway/issues/3) — example MCP server
-- [#4](https://github.com/EliseuSantos/mcp-gateway/issues/4) — pass-through proxy and an integration test
-- [#5](https://github.com/EliseuSantos/mcp-gateway/issues/5) — learning log and the week-1 diagram
+Run that from a checkout of the `v0.1.0` tag. `main.version` is `dev` unless the linker sets it.
 
-Auth, the allowlist, the audit log, and tracing are in place. The release notes, the learning log, and the demo tape come next.
+## Layout
+
+```text
+cmd/mcp-gateway/          entrypoint and Dockerfile
+internal/proxy/           Streamable HTTP proxy and its middleware hooks
+internal/auth/            API key and JWT
+internal/policy/          per-client tool allowlist
+internal/audit/           JSON audit log
+internal/telemetry/       OTLP traces and /metrics
+internal/config/          YAML loader
+examples/echo-server/     upstream MCP server for tests and the video
+examples/config/          development auth and allowlist
+docs/adr/                 ADR-001, ADR-002, ADR-003
+docs/demo/                VHS tape and the demo script
+docs/learning-log.md      decisions and trade-offs
+```
 
 ## License
 
